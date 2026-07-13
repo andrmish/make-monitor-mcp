@@ -1,89 +1,71 @@
-# Make Monitor MCP
+# Make Monitor MCP v2
 
-Read-only MCP server for monitoring Make.com scenario errors from ChatGPT.
+Read-only MCP server for Make.com monitoring.
 
-## Tools
+## New tools in v2
+
+- `get_recent_executions` — success, warning, error, or all
+- `get_recent_warnings`
+- `get_scenario_logs`
+- `get_execution_log`
+- `get_module_operations` — aggregated warnings/errors by module
+- `get_module_logs`
+- `list_incomplete_executions`
+- `get_incomplete_execution_details`
+
+Existing tools remain:
 
 - `list_scenarios`
 - `get_recent_errors`
 - `get_execution_details`
 
-The server contains no Make write, run, stop, activate, deactivate, or delete methods.
+## Required Make API scopes
 
-## Required Make token scope
-
-Create a separate Make API token with only:
+For scenarios, warnings, execution logs, and module logs:
 
 ```text
 scenarios:read
 ```
 
-Do not use an administrator token and do not commit the token to GitHub.
-
-## Environment variables
+For incomplete executions:
 
 ```text
-MAKE_API_TOKEN=...
-MAKE_TEAM_ID=...
-MAKE_ZONE=eu1
-MAX_SCENARIOS=200
-PORT=8000
+dlqs:read
 ```
 
-Supported zones: `eu1`, `eu2`, `us1`, `us2`.
+Do not add any write or run scopes.
 
-## Local Docker test
+## Railway update
 
-```bash
-cp .env.example .env
-# Fill in .env
-docker build -t make-monitor .
-docker run --rm --env-file .env -p 8000:8000 make-monitor
-```
+Replace the files in the existing GitHub repository with this version and commit.
+Railway should redeploy automatically.
 
-MCP endpoint:
+If you prefer to keep the current repository unchanged, create a new private repo
+and deploy it as a new Railway service using the same environment variables.
+
+## ChatGPT refresh
+
+After Railway redeploys:
+
+1. Open ChatGPT Settings → Apps.
+2. Open Make Monitor.
+3. Refresh/reconnect the app so ChatGPT re-reads the MCP tool list.
+4. Verify the new tools appear.
+
+## Example prompts
 
 ```text
-http://localhost:8000/mcp
-```
-
-## Railway deployment
-
-1. Create a private GitHub repository and upload these files.
-2. In Railway, choose **New Project → Deploy from GitHub repo**.
-3. Add the environment variables under **Variables**.
-4. Generate a public HTTPS domain.
-5. The MCP URL will be:
-
-```text
-https://YOUR-SERVICE.up.railway.app/mcp
-```
-
-## Connect to ChatGPT
-
-1. Open ChatGPT settings.
-2. Enable Developer mode under Security and login.
-3. Open Plugins/Apps and create a developer-mode app.
-4. Enter the public MCP URL.
-5. Verify that ChatGPT displays only the three read-only tools above.
-
-## Test prompts
-
-```text
-Покажи список сценариев Make.
+Проверь ошибки и warnings Make за последние 4 часа.
 ```
 
 ```text
-Проверь ошибки Make за последние 24 часа. Для каждой ошибки укажи сценарий, время и execution ID.
+Покажи warnings сценария 005.1 за последние сутки.
 ```
 
 ```text
-Изучи детали последней ошибки и объясни наиболее вероятную причину. Не выполняй никаких изменений.
+Покажи статистику warnings и errors по модулям сценария за 7 дней.
 ```
 
-## Security note
-
-This starter version does not implement user authentication at the MCP layer.
-Use it only for an initial private test, keep the deployment URL private, and do
-not expose any write tools. For durable production use, add OAuth or place the
-service behind an authentication layer compatible with ChatGPT MCP apps.
+```text
+Проверь incomplete executions сценария 6545632.
+```
