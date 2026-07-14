@@ -1,3 +1,4 @@
+import json
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -88,6 +89,48 @@ async def scenario_name_map(active_only: bool = False) -> dict[int, str]:
     }
 
 
+def parse_json_value(value: Any) -> Any:
+    """Parse Make fields that are returned as JSON strings."""
+    if not isinstance(value, str):
+        return value
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return value
+
+
+def extract_blueprint(data: dict[str, Any]) -> Any:
+    """Normalize the response variants returned by Make's blueprint endpoint."""
+    if "blueprint" in data:
+        return parse_json_value(data["blueprint"])
+
+    for key in ("response", "scenario"):
+        candidate = parse_json_value(data.get(key))
+        if isinstance(candidate, dict) and "blueprint" in candidate:
+            return parse_json_value(candidate["blueprint"])
+        if key == "response" and candidate is not None:
+            return candidate
+
+    return data
+
+
+def find_module(node: Any, module_id: int) -> dict[str, Any] | None:
+    """Find a module in the main flow or in any nested router branch."""
+    if isinstance(node, dict):
+        if node.get("id") == module_id:
+            return node
+        for value in node.values():
+            found = find_module(value, module_id)
+            if found is not None:
+                return found
+    elif isinstance(node, list):
+        for value in node:
+            found = find_module(value, module_id)
+            if found is not None:
+                return found
+    return None
+
+
 def compact_log(log: dict[str, Any], scenario_id: int, scenario_name: str) -> dict[str, Any]:
     status_code = log.get("status")
     return {
@@ -129,8 +172,7 @@ async def list_scenarios(active_only: bool = False) -> dict[str, Any]:
     }
 
 
-@mcp.tool()
-async def get_recent_executions(
+async def load_recent_executions(
     hours: int = 24,
     limit: int = 50,
     status: str = "all",
@@ -187,13 +229,33 @@ async def get_recent_executions(
 
 
 @mcp.tool()
+async def get_recent_executions(
+    hours: int = 24,
+    limit: int = 50,
+    status: str = "all",
+    active_scenarios_only: bool = False,
+) -> dict[str, Any]:
+    """
+    Return recent scenario executions across the configured team.
+    status: all, success, warning, or error.
+    Read-only.
+    """
+    return await load_recent_executions(
+        hours=hours,
+        limit=limit,
+        status=status,
+        active_scenarios_only=active_scenarios_only,
+    )
+
+
+@mcp.tool()
 async def get_recent_errors(
     hours: int = 24,
     limit: int = 20,
     active_scenarios_only: bool = False,
 ) -> dict[str, Any]:
     """Return recent error executions. Kept for backward compatibility. Read-only."""
-    return await get_recent_executions(
+    return await load_recent_executions(
         hours=hours,
         limit=limit,
         status="error",
@@ -208,7 +270,7 @@ async def get_recent_warnings(
     active_scenarios_only: bool = False,
 ) -> dict[str, Any]:
     """Return recent warning executions across scenarios. Read-only."""
-    return await get_recent_executions(
+    return await load_recent_executions(
         hours=hours,
         limit=limit,
         status="warning",
@@ -300,6 +362,62 @@ async def get_execution_details(
         },
         "execution_id": execution_id,
         "details": details,
+    }
+
+
+@mcp.tool()
+async def get_scenario_details(scenario_id: int) -> dict[str, Any]:
+    """Retrieve Make scenario metadata. Requires scenarios:read. Read-only."""
+    data = await make_get(f"/scenarios/{scenario_id}")
+    scenario = data.get("scenario", data)
+    if isinstance(scenario, dict):
+        scenario = dict(scenario)
+        if "scheduling" in scenario:
+            scenario["scheduling"] = parse_json_value(scenario["scheduling"])
+    return {"scenario_id": scenario_id, "scenario": scenario}
+
+
+@mcp.tool()
+async def get_scenario_blueprint(
+    scenario_id: int,
+    blueprint_id: int | None = None,
+) -> dict[str, Any]:
+    """
+    Retrieve the current or historical scenario blueprint.
+    Requires scenarios:read. Read-only.
+    """
+    params = {"blueprintId": blueprint_id} if blueprint_id is not None else None
+    data = await make_get(f"/scenarios/{scenario_id}/blueprint", params)
+    return {
+        "scenario_id": scenario_id,
+        "blueprint_id": blueprint_id,
+        "blueprint": extract_blueprint(data),
+    }
+
+
+@mcp.tool()
+async def get_scenario_module(
+    scenario_id: int,
+    module_id: int,
+    blueprint_id: int | None = None,
+) -> dict[str, Any]:
+    """
+    Retrieve one module's configuration and mappings from a scenario blueprint.
+    Requires scenarios:read. Read-only.
+    """
+    params = {"blueprintId": blueprint_id} if blueprint_id is not None else None
+    data = await make_get(f"/scenarios/{scenario_id}/blueprint", params)
+    blueprint = extract_blueprint(data)
+    module = find_module(blueprint, module_id)
+    if module is None:
+        raise ValueError(
+            f"Module {module_id} was not found in scenario {scenario_id}."
+        )
+    return {
+        "scenario_id": scenario_id,
+        "module_id": module_id,
+        "blueprint_id": blueprint_id,
+        "module": module,
     }
 
 

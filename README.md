@@ -1,4 +1,4 @@
-# Make Monitor MCP v2
+# Make Monitor MCP v3
 
 Read-only MCP server for Make.com monitoring.
 
@@ -12,6 +12,15 @@ Read-only MCP server for Make.com monitoring.
 - `get_module_logs`
 - `list_incomplete_executions`
 - `get_incomplete_execution_details`
+
+## New tools in v3
+
+- `get_scenario_details` — scenario metadata and scheduling
+- `get_scenario_blueprint` — current or historical blueprint
+- `get_scenario_module` — configuration and mappings for one module
+
+v3 also fixes `get_recent_errors` and `get_recent_warnings` failing with
+`'FunctionTool' object is not callable` under FastMCP 2.x.
 
 Existing tools remain:
 
