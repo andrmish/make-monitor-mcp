@@ -6,7 +6,12 @@ from pathlib import Path
 def load_helpers():
     source = Path("server.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
-    wanted = {"parse_json_value", "extract_blueprint", "find_module"}
+    wanted = {
+        "parse_json_value",
+        "extract_blueprint",
+        "find_module",
+        "find_airtable_table",
+    }
     nodes = [
         node
         for node in tree.body
@@ -35,6 +40,17 @@ class ServerHelperTests(unittest.TestCase):
     def test_missing_module(self):
         helpers = load_helpers()
         self.assertIsNone(helpers["find_module"]({"flow": [{"id": 1}]}, 999))
+
+    def test_find_airtable_table_by_id_or_name(self):
+        helpers = load_helpers()
+        tables = [
+            {"id": "tblSettings", "name": "Settings"},
+            {"id": "tblBooks", "name": "Books"},
+        ]
+        find_table = helpers["find_airtable_table"]
+        self.assertEqual(find_table(tables, "tblSettings")["name"], "Settings")
+        self.assertEqual(find_table(tables, "settings")["id"], "tblSettings")
+        self.assertIsNone(find_table(tables, "Missing"))
 
 
 if __name__ == "__main__":
