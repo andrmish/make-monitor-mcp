@@ -1,6 +1,33 @@
-# Make Monitor MCP v3
+# Make Monitor MCP v4
 
-Read-only MCP server for Make.com monitoring.
+Read-only MCP server for Make.com monitoring and Airtable configuration analysis.
+
+## New Airtable tools in v4
+
+- `list_airtable_tables` — table names and IDs in the configured base
+- `get_airtable_table_schema` — fields, types, options, and views for one table
+- `get_airtable_records` — paginated record reads with optional view, formula, and field filters
+
+All Airtable tools are read-only and return at most 500 records per call.
+
+## Required Airtable variables
+
+Configure these in Railway service variables, never in the repository:
+
+```text
+AIRTABLE_API_TOKEN=pat...
+AIRTABLE_BASE_ID=app...
+```
+
+The Airtable personal access token needs only these scopes and should be restricted
+to the single settings base:
+
+```text
+data.records:read
+schema.bases:read
+```
+
+Do not add any Airtable write scopes.
 
 ## New tools in v2
 
