@@ -142,7 +142,27 @@ def airtable_table_not_found(table: str, tables: list[dict[str, Any]]) -> ValueE
 @mcp.tool()
 async def list_airtable_tables() -> dict[str, Any]:
     """List tables available in the configured Airtable base. Read-only."""
-    tables = await load_airtable_tables()
+    try:
+        tables = await load_airtable_tables()
+    except RuntimeError as exc:
+        if "INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND" not in str(exc):
+            raise
+        bases_data = await airtable_get("meta/bases")
+        accessible = [
+            {
+                key: item.get(key)
+                for key in ("id", "name", "permissionLevel")
+                if item.get(key) is not None
+            }
+            for item in bases_data.get("bases", [])
+            if isinstance(item, dict)
+        ]
+        return {
+            "configured_base_id": AIRTABLE_BASE_ID,
+            "configured_base_access_error": str(exc),
+            "accessible_base_count": len(accessible),
+            "accessible_bases": accessible,
+        }
     compact = [
         {
             "id": item.get("id"),
