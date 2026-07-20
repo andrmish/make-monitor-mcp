@@ -84,7 +84,24 @@ async def airtable_get(
             },
             params=params or {},
         )
-        response.raise_for_status()
+        if response.is_error:
+            error_type = "UNKNOWN"
+            error_message = "No details returned by Airtable"
+            try:
+                payload = response.json()
+                error = payload.get("error", {}) if isinstance(payload, dict) else {}
+                if isinstance(error, dict):
+                    error_type = str(error.get("type") or error_type)
+                    error_message = str(error.get("message") or error_message)
+                elif error:
+                    error_message = str(error)
+            except (ValueError, TypeError):
+                if response.text:
+                    error_message = response.text[:500]
+            raise RuntimeError(
+                f"Airtable API error {response.status_code} "
+                f"({error_type}): {error_message[:500]}"
+            )
         data = response.json()
         if not isinstance(data, dict):
             raise RuntimeError("Unexpected response from Airtable API")
