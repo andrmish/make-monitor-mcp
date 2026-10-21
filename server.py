@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 from datetime import datetime, timedelta, timezone
@@ -6,6 +7,8 @@ from urllib.parse import quote
 
 import httpx
 from fastmcp import FastMCP
+
+from editor import ScenarioEditor, build_app
 
 MAKE_API_TOKEN = os.environ["MAKE_API_TOKEN"]
 MAKE_TEAM_ID = int(os.environ["MAKE_TEAM_ID"])
@@ -139,7 +142,7 @@ def airtable_table_not_found(table: str, tables: list[dict[str, Any]]) -> ValueE
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 async def list_airtable_tables() -> dict[str, Any]:
     """List tables available in the configured Airtable base. Read-only."""
     try:
@@ -181,7 +184,7 @@ async def list_airtable_tables() -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 async def get_airtable_table_schema(table: str) -> dict[str, Any]:
     """Return fields and views for one Airtable table by name or table ID. Read-only."""
     tables = await load_airtable_tables()
@@ -218,7 +221,7 @@ async def get_airtable_table_schema(table: str) -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 async def get_airtable_records(
     table: str,
     view: str | None = None,
@@ -380,7 +383,7 @@ def compact_log(log: dict[str, Any], scenario_id: int, scenario_name: str) -> di
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 async def list_scenarios(active_only: bool = False) -> dict[str, Any]:
     """List Make scenarios in the configured team. Read-only."""
     scenarios = await load_scenarios(active_only=active_only)
@@ -458,7 +461,7 @@ async def load_recent_executions(
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 async def get_recent_executions(
     hours: int = 24,
     limit: int = 50,
@@ -478,7 +481,7 @@ async def get_recent_executions(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 async def get_recent_errors(
     hours: int = 24,
     limit: int = 20,
@@ -493,7 +496,7 @@ async def get_recent_errors(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 async def get_recent_warnings(
     hours: int = 24,
     limit: int = 20,
@@ -508,7 +511,7 @@ async def get_recent_warnings(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 async def get_scenario_logs(
     scenario_id: int,
     hours: int = 24,
@@ -562,7 +565,7 @@ async def get_scenario_logs(
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 async def get_execution_log(
     scenario_id: int,
     execution_id: str,
@@ -571,7 +574,7 @@ async def get_execution_log(
     return await make_get(f"/scenarios/{scenario_id}/logs/{execution_id}")
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 async def get_execution_details(
     scenario_id: int,
     execution_id: str,
@@ -595,7 +598,7 @@ async def get_execution_details(
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 async def get_scenario_details(scenario_id: int) -> dict[str, Any]:
     """Retrieve Make scenario metadata. Requires scenarios:read. Read-only."""
     data = await make_get(f"/scenarios/{scenario_id}")
@@ -607,7 +610,7 @@ async def get_scenario_details(scenario_id: int) -> dict[str, Any]:
     return {"scenario_id": scenario_id, "scenario": scenario}
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 async def get_scenario_blueprint(
     scenario_id: int,
     blueprint_id: int | None = None,
@@ -625,7 +628,7 @@ async def get_scenario_blueprint(
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 async def get_scenario_module(
     scenario_id: int,
     module_id: int,
@@ -651,7 +654,7 @@ async def get_scenario_module(
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 async def get_module_operations(
     scenario_id: int,
     days: int = 1,
@@ -672,7 +675,7 @@ async def get_module_operations(
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 async def get_module_logs(
     scenario_id: int,
     module_id: int,
@@ -696,7 +699,7 @@ async def get_module_logs(
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 async def list_incomplete_executions(
     scenario_id: int,
 ) -> dict[str, Any]:
@@ -713,7 +716,7 @@ async def list_incomplete_executions(
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 async def get_incomplete_execution_details(
     dlq_id: str,
     include_bundle: bool = False,
@@ -735,10 +738,15 @@ async def get_incomplete_execution_details(
 
 
 if __name__ == "__main__":
+    import uvicorn
+
     port = int(os.getenv("PORT", "8000"))
-    mcp.run(
-        transport="http",
-        host="0.0.0.0",
-        port=port,
-        path="/mcp",
+    app = asyncio.run(build_app(
+        mcp,
+        ScenarioEditor(make_get, MAKE_TEAM_ID, BASE_URL, HEADERS),
+        os.getenv("MCP_EDITOR_TOKEN", "").strip(),
+    ))
+    uvicorn.run(
+        app, host="0.0.0.0", port=port, access_log=False,
     )
+
