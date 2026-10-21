@@ -1,6 +1,72 @@
-# Make Monitor MCP v4
+# Make Monitor MCP v5
 
-Read-only MCP server for Make.com monitoring and Airtable configuration analysis.
+MCP server for Make.com monitoring, authenticated scenario editing, and read-only
+Airtable configuration analysis.
+
+## Scenario editing in v5
+
+The existing `/mcp` connection remains read-only. The editor is a separate,
+authenticated MCP transport on the same Railway service, with all existing read
+tools plus:
+
+- `get_editor_status` — capabilities; does not claim the Make token has write access
+- `get_scenario_for_edit` — complete latest saved draft, concurrency version, and SHA-256 revision
+- `preview_scenario_update` — validate the proposed complete blueprint and summarize changes without saving
+- `update_scenario` — save a revised blueprint and read back the result
+
+Editing is limited to the configured `MAKE_TEAM_ID`. The caller must supply the
+version and revision of the blueprint it edited. Both are checked before saving;
+`baseVersion` is also passed to Make to reject a concurrent edit during the request.
+The editor reads the latest saved draft explicitly rather than overwriting it from
+an older published blueprint. Empty blueprints and duplicate module IDs are refused.
+Schedules, activation state, execution queues and Airtable are not changed by these
+tools. The editor has no run, stop, activate, retry, or delete commands.
+
+Successful saves return `saved: true`; only matching read-back returns `verified: true`.
+If a write times out or read-back fails, inspect the current blueprint before
+retrying. Never automatically replay an uncertain save. Make retains blueprint
+history under its own retention rules; this service does not promise permanent backups.
+
+### Private editor connection
+
+Set `MCP_EDITOR_TOKEN` in Railway to a random URL-safe secret with at least 256 bits
+of entropy (for example, `secrets.token_urlsafe(32)`). Without this variable, the
+editor is disabled and the public reader continues working.
+
+Clients that support custom headers can use `/editor/mcp` with
+`Authorization: Bearer <MCP_EDITOR_TOKEN>`.
+
+For private ChatGPT connections without custom headers, use:
+
+```text
+https://<service-domain>/editor/<MCP_EDITOR_TOKEN>/mcp
+```
+
+This URL is a credential: anyone holding it can use the editor within the configured
+Make team. Keep it private, never put it in this repository or a public plugin,
+and rotate the token if it is disclosed. Server access logging is disabled;
+infrastructure HTTP logs may still contain request paths. `MCP_EDITOR_URL` can be
+stored as a convenience in Railway variables for the owner to copy into ChatGPT.
+Do not put the Make API token in the URL.
+
+Update the private custom app's MCP server URL to the editor URL and refresh its
+tools; if the client does not allow changing an existing server URL, add a private
+connection with that URL and Authentication set to None (the URL already carries
+the credential). Do not publish this connection. The original `/mcp` connection
+keeps its existing read-only tool set.
+
+`GET /health` returns the release version and whether an editor credential is
+configured, without returning secrets.
+
+### Validation
+
+```sh
+python -m unittest -v test_server_helpers test_editor
+```
+
+Tests cover real MCP transport discovery and access isolation, cross-team rejection,
+concurrent/stale saves, JSON serialization, permission failures, and uncertain
+write outcomes. They use synthetic blueprints and never change a live Make scenario.
 
 ## New Airtable tools in v4
 
@@ -69,7 +135,9 @@ For incomplete executions:
 dlqs:read
 ```
 
-Do not add any write or run scopes.
+For authenticated scenario editing, also add `scenarios:write` to the Make token.
+Keep `dlqs:read` if incomplete-execution diagnostics are needed. No run scope is
+needed by this release. The token owner's Make team role must also permit editing.
 
 ## Railway update
 
@@ -85,8 +153,9 @@ After Railway redeploys:
 
 1. Open ChatGPT Settings → Apps.
 2. Open Make Monitor.
-3. Refresh/reconnect the app so ChatGPT re-reads the MCP tool list.
-4. Verify the new tools appear.
+3. To use the editor, switch to the private editor connection described above.
+4. Refresh/reconnect the app so ChatGPT re-reads the MCP tool list.
+5. Verify `get_scenario_for_edit`, `preview_scenario_update`, and `update_scenario` appear.
 
 ## Example prompts
 
@@ -105,3 +174,4 @@ After Railway redeploys:
 ```text
 Проверь incomplete executions сценария 6545632.
 ```
+
